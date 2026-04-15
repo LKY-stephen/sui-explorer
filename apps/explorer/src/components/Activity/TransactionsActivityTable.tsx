@@ -5,12 +5,13 @@ import { useSuiClient } from '@mysten/dapp-kit';
 import { ArrowRight12 } from '@mysten/icons';
 import { Text } from '@mysten/ui';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { genTableDataFromTxData } from '../transactions/TxCardUtils';
+import { getActivityTransactionPage } from './filters';
 import { useGetTransactionBlocks } from '~/hooks/useGetTransactionBlocks';
 import { Link } from '~/ui/Link';
-import { Pagination, useCursorPagination } from '~/ui/Pagination';
+import { Pagination } from '~/ui/Pagination';
 import { PlaceholderTable } from '~/ui/PlaceholderTable';
 import { TableCard } from '~/ui/TableCard';
 import { numberSuffix } from '~/utils/numberUtil';
@@ -22,6 +23,7 @@ interface Props {
 	refetchInterval?: number;
 	initialLimit?: number;
 	transactionKindFilter?: 'ProgrammableTransaction';
+	showZeroSenderTransactions?: boolean;
 }
 
 export function TransactionsActivityTable({
@@ -29,8 +31,10 @@ export function TransactionsActivityTable({
 	refetchInterval,
 	initialLimit = DEFAULT_TRANSACTIONS_LIMIT,
 	transactionKindFilter,
+	showZeroSenderTransactions = false,
 }: Props) {
 	const [limit, setLimit] = useState(initialLimit);
+	const [currentPage, setCurrentPage] = useState(0);
 	const client = useSuiClient();
 	const { data: count } = useQuery({
 		queryKey: ['transactions', 'count'],
@@ -44,14 +48,34 @@ export function TransactionsActivityTable({
 		limit,
 		refetchInterval,
 	);
-	const { data, isFetching, pagination, isPending, isError } = useCursorPagination(transactions);
-	const goToFirstPageRef = useRef(pagination.onFirst);
-	goToFirstPageRef.current = pagination.onFirst;
-	const cardData = data ? genTableDataFromTxData(data.data) : undefined;
+	const {
+		data,
+		isFetching,
+		isPending,
+		isError,
+		fetchNextPage,
+		hasNextPage,
+		isFetchingNextPage,
+	} = transactions;
+	const rawPages = data?.pages ?? [];
+	const filteredPage = useMemo(
+		() => getActivityTransactionPage(rawPages, currentPage, limit, showZeroSenderTransactions),
+		[rawPages, currentPage, limit, showZeroSenderTransactions],
+	);
+	const cardData =
+		data && !filteredPage.needsMoreData
+			? genTableDataFromTxData(filteredPage.transactions)
+			: undefined;
 
 	useEffect(() => {
-		goToFirstPageRef.current();
-	}, [transactionKindFilter]);
+		setCurrentPage(0);
+	}, [transactionKindFilter, showZeroSenderTransactions, limit]);
+
+	useEffect(() => {
+		if (filteredPage.needsMoreData && hasNextPage && !isFetchingNextPage && !isError) {
+			void fetchNextPage();
+		}
+	}, [fetchNextPage, filteredPage.needsMoreData, hasNextPage, isError, isFetchingNextPage]);
 	return (
 		<div data-testid="tx">
 			{isError && (
@@ -60,7 +84,7 @@ export function TransactionsActivityTable({
 				</div>
 			)}
 			<div className="flex flex-col space-y-3 text-left">
-				{isPending || isFetching || !cardData ? (
+				{isPending || (filteredPage.needsMoreData && !isError) || !cardData ? (
 					<PlaceholderTable
 						rowCount={limit}
 						rowHeight="16px"
@@ -75,7 +99,19 @@ export function TransactionsActivityTable({
 
 				<div className="flex justify-between">
 					{!disablePagination ? (
-						<Pagination {...pagination} />
+						<Pagination
+							hasPrev={currentPage !== 0}
+							hasNext={filteredPage.hasNextPage}
+							onFirst={() => setCurrentPage(0)}
+							onPrev={() => setCurrentPage((page) => Math.max(page - 1, 0))}
+							onNext={() => {
+								if (!filteredPage.hasNextPage || isFetching || isFetchingNextPage) {
+									return;
+								}
+
+								setCurrentPage((page) => page + 1);
+							}}
+						/>
 					) : (
 						<Link to="/recent" after={<ArrowRight12 className="h-3 w-3 -rotate-45" />}>
 							View all
@@ -93,7 +129,6 @@ export function TransactionsActivityTable({
 								value={limit}
 								onChange={(e) => {
 									setLimit(Number(e.target.value));
-									pagination.onFirst();
 								}}
 							>
 								<option value={20}>20 Per Page</option>

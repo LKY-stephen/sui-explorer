@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useFormatCoin } from '@mysten/core';
-import { useSuiClientQuery } from '@mysten/dapp-kit';
+import { useSuiClient, useSuiClientQuery } from '@mysten/dapp-kit';
 import { SUI_TYPE_ARG } from '@mysten/sui.js/utils';
 import { LoadingIndicator } from '@mysten/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -15,7 +15,6 @@ import { ValidatorStatus } from './stats/ValidatorStatus';
 import { validatorsTableData } from '../validators/Validators';
 import { PageLayout } from '~/components/Layout/PageLayout';
 import { CheckpointsTable } from '~/components/checkpoints/CheckpointsTable';
-import { useEnhancedRpcClient } from '~/hooks/useEnhancedRpc';
 import { Banner } from '~/ui/Banner';
 import { Stats, type StatsProps } from '~/ui/Stats';
 import { TableCard } from '~/ui/TableCard';
@@ -39,12 +38,12 @@ function SuiStats({
 
 export default function EpochDetail() {
 	const { id } = useParams();
-	const enhancedRpc = useEnhancedRpcClient();
+	const client = useSuiClient();
 	const { data: systemState } = useSuiClientQuery('getLatestSuiSystemState');
 	const { data, isPending, isError } = useQuery({
 		queryKey: ['epoch', id],
 		queryFn: async () =>
-			enhancedRpc.getEpochs({
+			client.getEpochs({
 				// todo: endpoint returns no data for epoch 0
 				cursor: id === '0' ? undefined : (Number(id!) - 1).toString(),
 				limit: 1,
@@ -140,6 +139,7 @@ export default function EpochDetail() {
 								initialCursor={initialCursorPlusOne}
 								maxCursor={epochData.firstCheckpointId}
 								initialLimit={20}
+								showSystemCheckpoints
 							/>
 						</TabsContent>
 						<TabsContent value="validators">

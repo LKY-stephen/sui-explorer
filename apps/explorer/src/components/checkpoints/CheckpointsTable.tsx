@@ -1,11 +1,13 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSuiClientQuery } from '@mysten/dapp-kit';
+import { useSuiClient, useSuiClientQuery } from '@mysten/dapp-kit';
 import { ArrowRight12 } from '@mysten/icons';
 import { Text } from '@mysten/ui';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
+import { filterSystemCheckpoints } from '../Activity/filters';
 import { genTableDataFromCheckpointsData } from './utils';
 import { useGetCheckpoints } from '~/hooks/useGetCheckpoints';
 import { Link } from '~/ui/Link';
@@ -22,6 +24,7 @@ interface Props {
 	initialLimit?: number;
 	initialCursor?: string;
 	maxCursor?: string;
+	showSystemCheckpoints?: boolean;
 }
 
 export function CheckpointsTable({
@@ -29,8 +32,10 @@ export function CheckpointsTable({
 	initialLimit = DEFAULT_CHECKPOINTS_LIMIT,
 	initialCursor,
 	maxCursor,
+	showSystemCheckpoints = false,
 }: Props) {
 	const [limit, setLimit] = useState(initialLimit);
+	const client = useSuiClient();
 
 	const countQuery = useSuiClientQuery('getLatestCheckpointSequenceNumber');
 
@@ -51,7 +56,57 @@ export function CheckpointsTable({
 		}
 	}, [countQuery.data, initialCursor, maxCursor, checkpoints, isError]);
 
-	const cardData = data ? genTableDataFromCheckpointsData(data) : undefined;
+	const checkpointTransactionDigests = useMemo(
+		() =>
+			showSystemCheckpoints || !data
+				? []
+				: Array.from(new Set(data.data.flatMap((checkpoint) => checkpoint.transactions))),
+		[data, showSystemCheckpoints],
+	);
+	const checkpointTransactions = useQuery({
+		queryKey: ['checkpoint-transactions', checkpointTransactionDigests],
+		queryFn: async () => {
+			const transactions = await client.multiGetTransactionBlocks({
+				digests: checkpointTransactionDigests,
+				options: {
+					showInput: true,
+				},
+			});
+
+			return transactions.filter((transaction): transaction is NonNullable<typeof transaction> =>
+				Boolean(transaction),
+			);
+		},
+		enabled: checkpointTransactionDigests.length > 0,
+		staleTime: 10 * 1000,
+		retry: false,
+	});
+	const checkpointTransactionsByDigest = useMemo(
+		() => new Map((checkpointTransactions.data ?? []).map((transaction) => [transaction.digest, transaction])),
+		[checkpointTransactions.data],
+	);
+	const filteredData = useMemo(() => {
+		if (!data) {
+			return undefined;
+		}
+
+		return {
+			...data,
+			data: filterSystemCheckpoints(
+				data.data,
+				showSystemCheckpoints,
+				checkpointTransactionsByDigest,
+			),
+		};
+	}, [data, showSystemCheckpoints, checkpointTransactionsByDigest]);
+	const isCheckpointFilterPending =
+		!showSystemCheckpoints &&
+		checkpointTransactionDigests.length > 0 &&
+		(checkpointTransactions.isPending || checkpointTransactions.isFetching);
+	const cardData =
+		filteredData && !isCheckpointFilterPending
+			? genTableDataFromCheckpointsData(filteredData)
+			: undefined;
 
 	return (
 		<div className="flex flex-col space-y-3 text-left xl:pr-10">
@@ -60,7 +115,7 @@ export function CheckpointsTable({
 					Failed to load Checkpoints
 				</div>
 			)}
-			{isPending || isFetching || !cardData ? (
+			{isPending || isFetching || isCheckpointFilterPending || !cardData ? (
 				<PlaceholderTable
 					rowCount={Number(limit)}
 					rowHeight="16px"
@@ -78,7 +133,9 @@ export function CheckpointsTable({
 					<Pagination
 						{...pagination}
 						hasNext={
-							maxCursor ? Number(data && data.nextCursor) > Number(maxCursor) : pagination.hasNext
+							maxCursor
+								? Number(filteredData && filteredData.nextCursor) > Number(maxCursor)
+								: pagination.hasNext
 						}
 					/>
 				) : (

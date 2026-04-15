@@ -1,13 +1,15 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSuiClient, useSuiClientInfiniteQuery } from '@mysten/dapp-kit';
+import { useSuiClient } from '@mysten/dapp-kit';
 import { ArrowRight12 } from '@mysten/icons';
+import { type EpochPage } from '@mysten/sui.js/client';
 import { Text } from '@mysten/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { genTableDataFromEpochsData } from './utils';
+import { useGetEpochs } from './useGetEpochs';
 import { Link } from '~/ui/Link';
 import { Pagination, useCursorPagination } from '~/ui/Pagination';
 import { PlaceholderTable } from '~/ui/PlaceholderTable';
@@ -25,6 +27,7 @@ interface Props {
 export function EpochsActivityTable({
 	disablePagination,
 	initialLimit = DEFAULT_EPOCHS_LIMIT,
+	refetchInterval,
 }: Props) {
 	const [limit, setLimit] = useState(initialLimit);
 	const client = useSuiClient();
@@ -35,12 +38,9 @@ export function EpochsActivityTable({
 		select: (epoch) => Number(epoch.epoch) + 1,
 	});
 
-	const epochMetricsQuery = useSuiClientInfiniteQuery('getEpochMetrics', {
-		limit,
-		descendingOrder: true,
-	});
+	const epochsQuery = useGetEpochs(limit, refetchInterval);
 	const { data, isFetching, pagination, isPending, isError } =
-		useCursorPagination(epochMetricsQuery);
+		useCursorPagination<EpochPage>(epochsQuery);
 
 	const cardData = data ? genTableDataFromEpochsData(data) : undefined;
 

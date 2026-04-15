@@ -10,7 +10,35 @@ _A fork of [sui-explorer](https://github.com/MystenLabs/sui-explorer), originall
 
 - [Node (>= v20)](https://nodejs.org/en/download/)
 
-## Install
+## Install from source
+
+```bash
+pnpm install
+```
+
+## Run from source
+
+Development server on [http://localhost:3000/](http://localhost:3000/):
+
+```bash
+pnpm dev
+```
+
+Production build and local static serve on [http://localhost:9001/](http://localhost:9001/):
+
+```bash
+pnpm build
+pnpm start
+```
+
+Useful local checks:
+
+```bash
+pnpm test:unit
+pnpm typecheck
+```
+
+## Install as a package
 
 ```bash
 # globally

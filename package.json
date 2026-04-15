@@ -8,7 +8,10 @@
     "sui-explorer-local": "./index.js"
   },
   "scripts": {
+    "dev": "pnpm --filter explorer dev",
     "build": "pnpm --filter explorer build",
+    "test:unit": "pnpm --filter explorer test:unit",
+    "typecheck": "pnpm --filter explorer typecheck",
     "serve": "pnpm --filter explorer serve",
     "start": "pnpm build && pnpm serve"
   },

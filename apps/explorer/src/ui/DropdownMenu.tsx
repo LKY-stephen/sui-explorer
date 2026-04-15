@@ -43,13 +43,14 @@ export type DropdownMenuCheckboxItemProps = Omit<
 > & { checked?: boolean; label: ReactNode };
 export function DropdownMenuCheckboxItem({
 	checked = false,
+	label,
 	...radixRootProps
 }: DropdownMenuCheckboxItemProps) {
 	return (
 		<RadixDropdownMenu.CheckboxItem {...radixRootProps} asChild>
 			<div className="flex cursor-pointer select-none items-center gap-4 rounded-md p-2 text-steel-dark outline-none transition-colors data-[highlighted]:bg-sui-light/50 data-[highlighted]:text-steel-darker">
 				<div className="flex-1">
-					<Text variant="body/medium">Show System Transactions</Text>
+					<Text variant="body/medium">{label}</Text>
 				</div>
 				<Toggle
 					onClick={(e) => {
