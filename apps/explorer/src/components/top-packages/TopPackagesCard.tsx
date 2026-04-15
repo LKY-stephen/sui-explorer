@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-import { useSuiClient } from '@mysten/dapp-kit';
+import { useSuiClient, useSuiClientQuery } from '@mysten/dapp-kit';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -11,13 +11,22 @@ import { ErrorBoundary } from '../error-boundary/ErrorBoundary';
 import { FilterList } from '~/ui/FilterList';
 import { TabHeader } from '~/ui/Tabs';
 
+export const TOP_PACKAGES_REFRESH_INTERVAL = 10 * 1000;
+
 export function TopPackagesCard() {
 	const client = useSuiClient();
 	const [selectedFilter, setSelectedFilter] = useState<DateFilter>('3D');
+	const { data: currentEpoch } = useSuiClientQuery('getLatestSuiSystemState', undefined, {
+		select: ({ epoch }) => epoch,
+		refetchInterval: TOP_PACKAGES_REFRESH_INTERVAL,
+		refetchIntervalInBackground: true,
+		refetchOnMount: 'always',
+	});
 
 	const { data, isPending } = useQuery({
-		queryKey: ['top-packages', selectedFilter],
+		queryKey: ['top-packages', selectedFilter, currentEpoch ?? null],
 		queryFn: async () => getTopPackages(client, selectedFilter),
+		refetchOnMount: 'always',
 	});
 
 	return (

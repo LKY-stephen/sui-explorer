@@ -39,17 +39,19 @@ export function EpochsActivityTable({
 	});
 
 	const epochsQuery = useGetEpochs(limit, refetchInterval);
-	const { data, isFetching, pagination, isPending, isError } =
+	const { data, pagination, isPending, isError } =
 		useCursorPagination<EpochPage>(epochsQuery);
 
 	const cardData = data ? genTableDataFromEpochsData(data) : undefined;
+	const showError = isError && !cardData;
+	const showPlaceholder = isPending || !cardData;
 
 	return (
 		<div className="flex flex-col space-y-3 text-left xl:pr-10">
-			{isError && (
+			{showError && (
 				<div className="pt-2 font-sans font-semibold text-issue-dark">Failed to load Epochs</div>
 			)}
-			{isPending || isFetching || !cardData ? (
+			{showPlaceholder ? (
 				<PlaceholderTable
 					rowCount={limit}
 					rowHeight="16px"

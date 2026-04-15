@@ -6,8 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
 	aggregateMoveCallMetrics,
+	collectMoveCalls,
 	getTopPackages,
 	selectTopPackagesForFilter,
+	USER_SENT_TRANSACTION_FILTER,
 } from './metrics';
 
 function createMoveCallTransaction(
@@ -18,6 +20,7 @@ function createMoveCallTransaction(
 		module: string;
 		function: string;
 	},
+	sender = '0x2',
 ) {
 	return {
 		digest,
@@ -25,6 +28,7 @@ function createMoveCallTransaction(
 		transaction: {
 			txSignatures: [],
 			data: {
+				sender,
 				transaction: {
 					kind: 'ProgrammableTransaction',
 					transactions: [{ MoveCall: moveCall }],
@@ -35,18 +39,7 @@ function createMoveCallTransaction(
 }
 
 describe('top package metrics', () => {
-	it('selects move-call metrics directly when the RPC method is available', async () => {
-		const getMoveCallMetrics = vi.fn().mockResolvedValue({
-			rank3Days: [[{ package: '0x1', module: 'm', function: 'a' }, '3']],
-			rank7Days: [[{ package: '0x2', module: 'm', function: 'b' }, '7']],
-			rank30Days: [[{ package: '0x3', module: 'm', function: 'c' }, '30']],
-		});
-		const queryTransactionBlocks = vi.fn();
-
-		await expect(
-			getTopPackages({ getMoveCallMetrics, queryTransactionBlocks }, '7D'),
-		).resolves.toEqual([[{ package: '0x2', module: 'm', function: 'b' }, '7']]);
-		expect(queryTransactionBlocks).not.toHaveBeenCalled();
+	it('keeps selecting metrics by filter when a caller already has aggregated RPC data', () => {
 		expect(
 			selectTopPackagesForFilter(
 				{
@@ -59,11 +52,10 @@ describe('top package metrics', () => {
 		).toEqual([[{ package: '0x4', module: 'mod', function: 'fn' }, '1']]);
 	});
 
-	it('falls back to recent transaction blocks when move-call metrics are unavailable', async () => {
+	it('aggregates recent transaction blocks for popular packages', async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date('2026-04-15T00:00:00Z'));
 
-		const getMoveCallMetrics = vi.fn().mockRejectedValue(new Error('Method not found'));
 		const queryTransactionBlocks = vi
 			.fn()
 			.mockResolvedValueOnce({
@@ -99,15 +91,38 @@ describe('top package metrics', () => {
 				nextCursor: null,
 			});
 
-		await expect(
-			getTopPackages({ getMoveCallMetrics, queryTransactionBlocks }, '7D'),
-		).resolves.toEqual([
+		await expect(getTopPackages({ queryTransactionBlocks }, '7D')).resolves.toEqual([
 			[{ package: '0x1', module: 'coin', function: 'mint' }, '2'],
 			[{ package: '0x2', module: 'swap', function: 'trade' }, '1'],
 		]);
 		expect(queryTransactionBlocks).toHaveBeenCalledTimes(2);
+		expect(queryTransactionBlocks).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				filter: USER_SENT_TRANSACTION_FILTER,
+				limit: 100,
+				order: 'descending',
+			}),
+		);
 
 		vi.useRealTimers();
+	});
+
+	it('drops move-call collection for programmable transactions sent from 0x0', () => {
+		expect(
+			collectMoveCalls(
+				createMoveCallTransaction(
+					'tx-system',
+					Date.now(),
+					{
+						package: '0x1',
+						module: 'pkg',
+						function: 'call',
+					},
+					'0x0',
+				),
+			),
+		).toEqual([]);
 	});
 
 	it('aggregates move calls by package, module, and function', () => {
@@ -133,5 +148,27 @@ describe('top package metrics', () => {
 			[{ package: '0x1', module: 'pkg', function: 'call' }, '2'],
 			[{ package: '0x2', module: 'other', function: 'read' }, '1'],
 		]);
+	});
+
+	it('ignores programmable transactions sent from 0x0', () => {
+		expect(
+			aggregateMoveCallMetrics([
+				createMoveCallTransaction(
+					'tx-system',
+					Date.now(),
+					{
+						package: '0x1',
+						module: 'pkg',
+						function: 'call',
+					},
+					'0x0',
+				),
+				createMoveCallTransaction('tx-user', Date.now(), {
+					package: '0x2',
+					module: 'other',
+					function: 'read',
+				}),
+			]),
+		).toEqual([[{ package: '0x2', module: 'other', function: 'read' }, '1']]);
 	});
 });

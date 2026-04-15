@@ -5,8 +5,10 @@ import {
 	type MoveCallMetric,
 	type MoveCallMetrics,
 	type SuiClient,
+	type TransactionFilter,
 	type SuiTransactionBlockResponse,
 } from '@mysten/sui.js/client';
+import { normalizeSuiAddress } from '@mysten/sui.js/utils';
 
 export type DateFilter = '3D' | '7D' | '30D';
 export type ApiDateFilter = 'rank3Days' | 'rank7Days' | 'rank30Days';
@@ -26,16 +28,24 @@ const FILTER_TO_WINDOW_MS: Record<DateFilter, number> = {
 const FALLBACK_PAGE_LIMIT = 100;
 const MAX_FALLBACK_PAGES = 50;
 const MAX_TOP_PACKAGES = 20;
+const ZERO_SENDER_ADDRESS = normalizeSuiAddress('0x0');
+export const USER_SENT_TRANSACTION_FILTER = {
+	TransactionKind: 'ProgrammableTransaction',
+} satisfies TransactionFilter;
 
-type MoveCallMetricsClient = Pick<SuiClient, 'getMoveCallMetrics' | 'queryTransactionBlocks'>;
+type MoveCallMetricsClient = Pick<SuiClient, 'queryTransactionBlocks'>;
 
 export function selectTopPackagesForFilter(metrics: MoveCallMetrics, filter: DateFilter) {
 	return metrics[FILTER_TO_API_FILTER[filter]];
 }
 
 export function collectMoveCalls(transaction: SuiTransactionBlockResponse) {
+	const sender = transaction.transaction?.data.sender;
 	const transactionData = transaction.transaction?.data.transaction;
-	if (transactionData?.kind !== 'ProgrammableTransaction') {
+	if (
+		transactionData?.kind !== 'ProgrammableTransaction' ||
+		(sender && normalizeSuiAddress(sender) === ZERO_SENDER_ADDRESS)
+	) {
 		return [];
 	}
 
@@ -95,6 +105,7 @@ export async function getTopPackagesFromTransactionBlocks(
 
 	for (let page = 0; page < MAX_FALLBACK_PAGES; page += 1) {
 		const response = await client.queryTransactionBlocks({
+			filter: USER_SENT_TRANSACTION_FILTER,
 			cursor,
 			limit: FALLBACK_PAGE_LIMIT,
 			order: 'descending',
@@ -132,9 +143,5 @@ export async function getTopPackagesFromTransactionBlocks(
 }
 
 export async function getTopPackages(client: MoveCallMetricsClient, filter: DateFilter) {
-	try {
-		return selectTopPackagesForFilter(await client.getMoveCallMetrics(), filter);
-	} catch {
-		return getTopPackagesFromTransactionBlocks(client, filter);
-	}
+	return getTopPackagesFromTransactionBlocks(client, filter);
 }
